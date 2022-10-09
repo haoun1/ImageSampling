@@ -14,30 +14,32 @@ namespace ImgSampleApplication
 {
     class MainWindowViewModel : INotifyPropertyChanged
     {
+        MemoryMappedFile m_MMF;
+        MemoryMappedViewStream m_MMVS;
+        long m_Adress;
+        int fGB = 5;
         BitmapSource m_bitmapSource;
-        byte[] aBuf;
         public BitmapSource p_bitmapSource
         {
             get => m_bitmapSource;
             set
             {
                 m_bitmapSource = value;
-                OnPropertyChanged();
+                OnPropertyChanged("m_bitmapSource");
             }
         }
 
         public MainWindowViewModel()
         {
-
+            m_MMF = MemoryMappedFile.CreateOrOpen("Memory", fGB * 1024 * 1024 * 1024);
+            m_MMVS = m_MMF.CreateViewStream();
         }
 
         public RelayCommand ImageLoadCommand
         {
             get => new RelayCommand(ImageLoad);
         }
-        MemoryMappedFile m_MMF;
-        MemoryMappedViewStream m_MMVS;
-        long m_Adress;
+
         /// <summary>
         /// 이미지 샘플링을 위한 비트맵소스 읽어오는 함수
         /// </summary>
@@ -59,48 +61,82 @@ namespace ImgSampleApplication
         /// <returns> 없음 </returns>
         private void ImageLoad()
         {
-            //MMF와 MMVS 만들기
-            m_MMF = MemoryMappedFile.CreateOrOpen("Memory", 1024 * 1024 * 1024);
-            m_MMVS = m_MMF.CreateViewStream();
 
-            //MMVS에 입력할 버퍼 만들기
+            FileStream fs;
+            BinaryReader br;
+            uint bfOffbits = 0;
+            int width = 0;
+            int height = 0;
+            int nByte = 0;
             OpenFileDialog dlg = new OpenFileDialog();
             dlg.Filter = "Image Files|*.bmp";
             dlg.InitialDirectory = @"D:\Images";
             if (dlg.ShowDialog() == DialogResult.OK)
             {
-                Bitmap bitmap = new Bitmap(dlg.FileName);
-                aBuf = new byte[bitmap.Width * bitmap.Height];
-                for (int y = 0; y < bitmap.Height; y++)
+                try
                 {
-                    for (int x = 0; x < bitmap.Width; x++)
-                    {
+                    fs = new FileStream(dlg.FileName, FileMode.Open, FileAccess.Read, FileShare.Read, 32768, true);
+                    br = new BinaryReader(fs);
+                    if (!ReadBitmapFileHeader(br,ref bfOffbits)) return;
+                    if (!ReadBitmapInfoHeader(br, ref width, ref height, ref nByte)) return;
+                    if (nByte > 1) return;
 
-                        aBuf[bitmap.Width * y + x] = bitmap.GetPixel(x, y).R;
-                    }
-                };
+                    Rectangle rect = new Rectangle(0, 0, width, height);
+
+                    // 픽셀 데이터 존재하는 부분으로 Seek
+                    fs.Seek(bfOffbits, SeekOrigin.Begin);
+
+
+
+                }
+                catch(Exception e)
+                {
+                    return;
+                }
+
             }
-
-            //MMVS에 버퍼 입력하기
-            m_MMVS.Write(aBuf, 0, aBuf.Length);
-            unsafe
-            {
-                byte* p = null;
-                m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
-                m_Adress = (long)(IntPtr)p;
-            }
-
         }
-        public byte[] ReadAllBytes(string fileName)
+
+        private bool ReadBitmapFileHeader(BinaryReader br, ref uint bfOffbits)
         {
-            byte[] buffer = null;
-            using (FileStream fs = new FileStream(fileName, FileMode.Open, FileAccess.ReadWrite))
-            {
-                buffer = new byte[fs.Length];
-                fs.Read(buffer, 0, (int)fs.Length);
-            }
-            return buffer;
+            if (br == null) return false;
+
+            ushort bfType;
+            uint bfSize;
+
+            bfType = br.ReadUInt16(); // isBitmap or Not
+            bfSize = br.ReadUInt32(); // FileSize
+            br.ReadUInt16(); //Reserved1 (NotUsed)
+            br.ReadUInt16(); //Reserved2 (NotUsed)
+            bfOffbits = br.ReadUInt32(); // biOffset
+
+            if (bfType != 0x4d42) return false;
+
+            return true;
+
         }
+
+        private bool ReadBitmapInfoHeader(BinaryReader br, ref int width, ref int height, ref int nByte)
+        {
+            if (br == null) return false;
+
+            uint biSize;
+
+            biSize = br.ReadUInt32();     // biSize
+            width = br.ReadInt32();       // biWidth
+            height = br.ReadInt32();      // biHeight
+            br.ReadUInt16();              // biPlanes
+            nByte = br.ReadUInt16() / 8;  // biBitcount
+            br.ReadUInt32();              // biCompression
+            br.ReadUInt32();              // biSizeImage
+            br.ReadInt32();               // biXPelsPerMeter
+            br.ReadInt32();               // biYPelsPerMeter
+            br.ReadUInt32();              // biClrUsed
+            br.ReadUInt32();              // biClrImportant
+
+            return true;
+        }
+       
         public event PropertyChangedEventHandler PropertyChanged;
         public void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
