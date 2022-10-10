@@ -19,6 +19,8 @@ namespace ImgSampleApplication
         MemoryMappedViewStream m_MMVS;
         long m_Adress;
         int fGB = 5;
+        int MapSizeX;
+        int MapSizeY;
         BitmapSource m_bitmapSource;
      
         public BitmapSource p_bitmapSource
@@ -34,7 +36,8 @@ namespace ImgSampleApplication
         public MainWindowViewModel()
         {
             m_MMF = MemoryMappedFile.CreateOrOpen("Memory", fGB * 1024 * 1024 * 1024);
-
+            MapSizeX = 40000;
+            MapSizeY = 40000;
         }
 
         public RelayCommand ImageLoadCommand
@@ -105,6 +108,7 @@ namespace ImgSampleApplication
   
                     if (!ReadBitmapFileHeader(br,ref bfOffbits)) return;
                     if (!ReadBitmapInfoHeader(br, ref width, ref height, ref nByte)) return;
+                    if (width > MapSizeX || height > MapSizeY) return;
                     if (nByte > 1) return;
 
                     fileRowSize = (width * nByte + 3) & ~3; // 파일 내 하나의 열당 너비 사이즈(4의 배수)
@@ -119,8 +123,10 @@ namespace ImgSampleApplication
                         Array.Clear(abuf, 0, rect.Width * nByte);
                         fs.Seek(rect.Left * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
                         fs.Read(abuf, 0, rect.Width * nByte);
-               
-                        Marshal.Copy(abuf, 0, destPtr, rect.Width * nByte);
+
+                        IntPtr ptr = new IntPtr(destPtr.ToInt64() + (((long)i) * MapSizeX) * nByte);
+
+                        Marshal.Copy(abuf, 0, ptr, rect.Width * nByte);
                         fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
                     }
 
