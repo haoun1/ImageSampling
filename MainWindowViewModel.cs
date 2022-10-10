@@ -117,11 +117,11 @@ namespace ImgSampleApplication
                     for(int i = rect.Bottom -1; i>=rect.Top; i--)
                     {
                         Array.Clear(abuf, 0, rect.Width * nByte);
-                        fs.Seek(rect.Left * nByte, SeekOrigin.Current);
+                        fs.Seek(rect.Left * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
                         fs.Read(abuf, 0, rect.Width * nByte);
                
                         Marshal.Copy(abuf, 0, destPtr, rect.Width * nByte);
-                        fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current);
+                        fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
                     }
 
 
