@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -19,6 +20,7 @@ namespace ImgSampleApplication
         long m_Adress;
         int fGB = 5;
         BitmapSource m_bitmapSource;
+     
         public BitmapSource p_bitmapSource
         {
             get => m_bitmapSource;
@@ -32,12 +34,26 @@ namespace ImgSampleApplication
         public MainWindowViewModel()
         {
             m_MMF = MemoryMappedFile.CreateOrOpen("Memory", fGB * 1024 * 1024 * 1024);
-            m_MMVS = m_MMF.CreateViewStream();
+
         }
 
         public RelayCommand ImageLoadCommand
         {
             get => new RelayCommand(ImageLoad);
+        }
+        public RelayCommand loadedCommand
+        {
+            get => new RelayCommand(() => 
+            { 
+            
+            });
+        }
+        public RelayCommand UnloadedCommand
+        {
+            get => new RelayCommand(() =>
+            {
+                m_MMF.Dispose();
+            });
         }
 
         /// <summary>
@@ -68,23 +84,45 @@ namespace ImgSampleApplication
             int width = 0;
             int height = 0;
             int nByte = 0;
+            byte[] abuf;
+            IntPtr destPtr;
+            int fileRowSize;
             OpenFileDialog dlg = new OpenFileDialog();
             dlg.Filter = "Image Files|*.bmp";
             dlg.InitialDirectory = @"D:\Images";
             if (dlg.ShowDialog() == DialogResult.OK)
             {
+                fs = new FileStream(dlg.FileName, FileMode.Open, FileAccess.Read, FileShare.Read, 32768, true);
+                br = new BinaryReader(fs);
                 try
                 {
-                    fs = new FileStream(dlg.FileName, FileMode.Open, FileAccess.Read, FileShare.Read, 32768, true);
-                    br = new BinaryReader(fs);
+                    unsafe
+                    {
+                        byte* p = null;
+                        m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
+                        destPtr = new IntPtr(p);
+                    }
+  
                     if (!ReadBitmapFileHeader(br,ref bfOffbits)) return;
                     if (!ReadBitmapInfoHeader(br, ref width, ref height, ref nByte)) return;
                     if (nByte > 1) return;
 
+                    fileRowSize = (width * nByte + 3) & ~3; // 파일 내 하나의 열당 너비 사이즈(4의 배수)
                     Rectangle rect = new Rectangle(0, 0, width, height);
+                    abuf = new byte[rect.Width * nByte];
 
                     // 픽셀 데이터 존재하는 부분으로 Seek
                     fs.Seek(bfOffbits, SeekOrigin.Begin);
+                    
+                    for(int i = rect.Bottom -1; i>=rect.Top; i--)
+                    {
+                        Array.Clear(abuf, 0, rect.Width * nByte);
+                        fs.Seek(rect.Left * nByte, SeekOrigin.Current);
+                        fs.Read(abuf, 0, rect.Width * nByte);
+               
+                        Marshal.Copy(abuf, 0, destPtr, rect.Width * nByte);
+                        fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current);
+                    }
 
 
 
@@ -92,6 +130,11 @@ namespace ImgSampleApplication
                 catch(Exception e)
                 {
                     return;
+                }
+                finally
+                {
+                    fs.Close();
+                    br.Close();
                 }
 
             }
