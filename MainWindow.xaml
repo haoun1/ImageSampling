@@ -20,6 +20,10 @@
 
     <Grid Background="Black">
         <Image Source="{Binding p_bitmapSource}"/>
-        <Button Content="LOAD" Width="50" Height="50" Command="{Binding ImageLoadCommand}"/>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <Button Content="LOAD" Width="50" Height="50" Command="{Binding ImageLoadCommand}"/>
+            <Button Content="Open" Width="50" Height="50" Command="{Binding ImageOpenCommand}"/>
+            <Button Content="Clear" Width="50" Height="50" Command="{Binding ImageClearCommand}"/>
+        </StackPanel>
     </Grid>
 </Window>

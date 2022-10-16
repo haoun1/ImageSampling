@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Emgu.CV;
+using Emgu.CV.Structure;
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
@@ -6,6 +8,7 @@ using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -18,24 +21,29 @@ namespace ImgSampleApplication
         MemoryMappedFile m_MMF;
         MemoryMappedViewStream m_MMVS;
         long m_Adress;
-        int fGB = 5;
+        double fGB = 5;
+        double GB = 1024 * 1024 * 1024;
         int MapSizeX;
         int MapSizeY;
+        int CanvasWidth = 800;
+        int CanvasHeight = 450;
         BitmapSource m_bitmapSource;
-     
+        IntPtr destPtr;
+
         public BitmapSource p_bitmapSource
         {
             get => m_bitmapSource;
             set
             {
                 m_bitmapSource = value;
-                OnPropertyChanged("m_bitmapSource");
+                OnPropertyChanged();
             }
         }
 
         public MainWindowViewModel()
         {
-            m_MMF = MemoryMappedFile.CreateOrOpen("Memory", fGB * 1024 * 1024 * 1024);
+            long nPool = (long)Math.Ceiling(fGB * GB);
+            m_MMF = MemoryMappedFile.CreateOrOpen("Memory", nPool);
             MapSizeX = 40000;
             MapSizeY = 40000;
         }
@@ -44,6 +52,18 @@ namespace ImgSampleApplication
         {
             get => new RelayCommand(ImageLoad);
         }
+
+        public RelayCommand ImageOpenCommand
+        {
+            get => new RelayCommand(ImageOpen);
+        }
+
+        public RelayCommand ImageClearCommand
+        {
+            get => new RelayCommand(ImageClear);
+        }
+
+
         public RelayCommand loadedCommand
         {
             get => new RelayCommand(() => 
@@ -78,7 +98,7 @@ namespace ImgSampleApplication
         /// </list>
         /// <param name="args">없음</param>
         /// <returns> 없음 </returns>
-        private void ImageLoad()
+        private unsafe void ImageLoad()
         {
 
             FileStream fs;
@@ -88,7 +108,6 @@ namespace ImgSampleApplication
             int height = 0;
             int nByte = 0;
             byte[] abuf;
-            IntPtr destPtr;
             int fileRowSize;
             OpenFileDialog dlg = new OpenFileDialog();
             dlg.Filter = "Image Files|*.bmp";
@@ -99,16 +118,15 @@ namespace ImgSampleApplication
                 br = new BinaryReader(fs);
                 try
                 {
-                    unsafe
-                    {
-                        byte* p = null;
-                        m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
-                        destPtr = new IntPtr(p);
-                    }
+
+                    byte* p = null;
+                    m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
+                    destPtr = new IntPtr(p);
   
                     if (!ReadBitmapFileHeader(br,ref bfOffbits)) return;
                     if (!ReadBitmapInfoHeader(br, ref width, ref height, ref nByte)) return;
-                    if (width > MapSizeX || height > MapSizeY) return;
+                    MapSizeX = width;
+                    MapSizeY = height;
                     if (nByte > 1) return;
 
                     fileRowSize = (width * nByte + 3) & ~3; // 파일 내 하나의 열당 너비 사이즈(4의 배수)
@@ -118,18 +136,18 @@ namespace ImgSampleApplication
                     // 픽셀 데이터 존재하는 부분으로 Seek
                     fs.Seek(bfOffbits, SeekOrigin.Begin);
                     
-                    for(int i = rect.Bottom -1; i>=rect.Top; i--)
+                    //for(int i = rect.Bottom -1; i>=rect.Top; i--)
+                    for (int i = rect.Bottom - 1; i >= rect.Top; i--)
                     {
                         Array.Clear(abuf, 0, rect.Width * nByte);
                         fs.Seek(rect.Left * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
                         fs.Read(abuf, 0, rect.Width * nByte);
 
-                        IntPtr ptr = new IntPtr(destPtr.ToInt64() + (((long)i) * MapSizeX) * nByte);
-
+                        IntPtr ptr = new IntPtr(destPtr.ToInt64() + ((long)i) * MapSizeX * nByte);
                         Marshal.Copy(abuf, 0, ptr, rect.Width * nByte);
                         fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
                     }
-
+                    MessageBox.Show("Image Load Done");
 
 
                 }
@@ -144,6 +162,47 @@ namespace ImgSampleApplication
                 }
 
             }
+        }
+
+        private unsafe void ImageOpen()
+        {
+            try
+            {
+                if (destPtr != IntPtr.Zero)
+                {
+                    Image<Gray, byte> view = new Image<Gray, byte>(CanvasWidth, CanvasHeight);
+                    int rectX, rectY, rectWidth, rectHeight, sizeX;
+                    byte[,,] viewptr = view.Data;
+                    Parallel.For(0, CanvasHeight, (yy) =>
+                    {
+                        long pix_y = yy * MapSizeY / CanvasHeight;
+                        for (int xx = 0; xx < CanvasWidth; xx++)
+                        {
+                            long pix_x = xx * MapSizeX / CanvasWidth;
+                            byte* arrByte = (byte*)destPtr;
+                            long idx = pix_x + (pix_y * MapSizeX);
+                            byte pixel = arrByte[idx];
+                            viewptr[yy, xx, 0] = pixel;
+                        }
+                    });
+                    p_bitmapSource = ToBitmapSource(view);
+                    MessageBox.Show("Image Open Done");
+                }
+                else
+                {
+                    MessageBox.Show("INTPTR Zero");
+                }
+            }
+            catch(Exception e)
+            {
+                MessageBox.Show(e.Message);
+            }
+        }
+
+        private void ImageClear()
+        {
+
+            MessageBox.Show("Image Clear Done");
         }
 
         private bool ReadBitmapFileHeader(BinaryReader br, ref uint bfOffbits)
@@ -163,6 +222,21 @@ namespace ImgSampleApplication
 
             return true;
 
+        }
+
+        private BitmapSource ToBitmapSource(Image<Gray, byte> img)
+        {
+            using(Bitmap source = img.ToBitmap())
+            {
+                var bitmapData = source.LockBits(
+                    new Rectangle(0, 0, source.Width, source.Height),
+                    System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                    source.PixelFormat);
+                BitmapSource result = BitmapSource.Create(source.Width, source.Height, 96, 96, 
+                    PixelFormats.Gray8, null, bitmapData.Scan0, bitmapData.Stride * bitmapData.Height, bitmapData.Stride);
+                source.UnlockBits(bitmapData);
+                return result;
+            }
         }
 
         private bool ReadBitmapInfoHeader(BinaryReader br, ref int width, ref int height, ref int nByte)
