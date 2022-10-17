@@ -9,6 +9,7 @@ using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -26,9 +27,96 @@ namespace ImgSampleApplication
         int MapSizeX;
         int MapSizeY;
         int CanvasWidth = 800;
+        public int p_CanvasWidth
+        {
+            get => CanvasWidth;
+            set
+            {
+                CanvasWidth = value;
+                OnPropertyChanged();
+            }
+        }
         int CanvasHeight = 450;
+        public int p_CanvasHeight
+        {
+            get => CanvasHeight;
+            set
+            {
+                CanvasHeight = value;
+                OnPropertyChanged();
+                ImageOpen();
+            }
+        }
+        uint bfOffbits = 0;
+        int width = 0;
+        int height = 0;
+        int nByte = 0;
         BitmapSource m_bitmapSource;
         IntPtr destPtr;
+
+        int m_mouseX;
+        public int p_mouseX
+        {
+            get => m_mouseX;
+            set
+            {
+                m_mouseX = value;
+                OnPropertyChanged();
+            }
+        }
+
+        int m_mouseY;
+        public int p_mouseY
+        {
+            get => m_mouseY;
+            set
+            {
+                unsafe
+                {
+                    byte* arrByte = (byte*)destPtr.ToPointer();
+                    long idx = p_mouseMemX + ((long)p_mouseMemY * MapSizeX);
+                    byte b1 = arrByte[idx];
+                    p_pixelData = BitConverter.ToUInt16(new byte[2] { b1, 0 }, 0);
+                    p_mouseMemX = p_mouseX * (MapSizeX / p_CanvasWidth);
+                    p_mouseMemY = p_mouseY * (MapSizeY / p_CanvasHeight);
+                }
+                m_mouseY = value;
+                OnPropertyChanged();
+            }
+        }
+
+        int m_mouseMemX;
+        public int p_mouseMemX
+        {
+            get => m_mouseMemX;
+            set
+            {
+                m_mouseMemX = value;
+                OnPropertyChanged();
+            }
+        }
+
+        int m_mouseMemY;
+        public int p_mouseMemY
+        {
+            get => m_mouseMemY;
+            set
+            {
+                m_mouseMemY = value;
+                OnPropertyChanged();
+            }
+        }
+
+        int m_pixelData;
+        public int p_pixelData
+        {
+            get => m_pixelData;
+            set
+            {
+                m_pixelData = value;
+                OnPropertyChanged();
+            }
+        }
 
         public BitmapSource p_bitmapSource
         {
@@ -46,16 +134,18 @@ namespace ImgSampleApplication
             m_MMF = MemoryMappedFile.CreateOrOpen("Memory", nPool);
             MapSizeX = 40000;
             MapSizeY = 40000;
+            unsafe 
+            { 
+                byte* p = null;
+                m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
+                destPtr = new IntPtr(p);
+            }
+            ImageOpen();
         }
 
         public RelayCommand ImageLoadCommand
         {
             get => new RelayCommand(ImageLoad);
-        }
-
-        public RelayCommand ImageOpenCommand
-        {
-            get => new RelayCommand(ImageOpen);
         }
 
         public RelayCommand ImageClearCommand
@@ -103,10 +193,6 @@ namespace ImgSampleApplication
 
             FileStream fs;
             BinaryReader br;
-            uint bfOffbits = 0;
-            int width = 0;
-            int height = 0;
-            int nByte = 0;
             byte[] abuf;
             int fileRowSize;
             OpenFileDialog dlg = new OpenFileDialog();
@@ -118,10 +204,6 @@ namespace ImgSampleApplication
                 br = new BinaryReader(fs);
                 try
                 {
-
-                    byte* p = null;
-                    m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
-                    destPtr = new IntPtr(p);
   
                     if (!ReadBitmapFileHeader(br,ref bfOffbits)) return;
                     if (!ReadBitmapInfoHeader(br, ref width, ref height, ref nByte)) return;
@@ -147,7 +229,7 @@ namespace ImgSampleApplication
                         Marshal.Copy(abuf, 0, ptr, rect.Width * nByte);
                         fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
                     }
-                    MessageBox.Show("Image Load Done");
+                    System.Windows.Forms.MessageBox.Show("Image Load Done");
 
 
                 }
@@ -170,15 +252,15 @@ namespace ImgSampleApplication
             {
                 if (destPtr != IntPtr.Zero)
                 {
-                    Image<Gray, byte> view = new Image<Gray, byte>(CanvasWidth, CanvasHeight);
+                    Image<Gray, byte> view = new Image<Gray, byte>(p_CanvasWidth, p_CanvasHeight);
                     int rectX, rectY, rectWidth, rectHeight, sizeX;
                     byte[,,] viewptr = view.Data;
-                    Parallel.For(0, CanvasHeight, (yy) =>
+                    Parallel.For(0, p_CanvasHeight, (yy) =>
                     {
-                        long pix_y = yy * MapSizeY / CanvasHeight;
-                        for (int xx = 0; xx < CanvasWidth; xx++)
+                        long pix_y = yy * MapSizeY / p_CanvasHeight;
+                        for (int xx = 0; xx < p_CanvasWidth; xx++)
                         {
-                            long pix_x = xx * MapSizeX / CanvasWidth;
+                            long pix_x = xx * MapSizeX / p_CanvasWidth;
                             byte* arrByte = (byte*)destPtr;
                             long idx = pix_x + (pix_y * MapSizeX);
                             byte pixel = arrByte[idx];
@@ -186,23 +268,27 @@ namespace ImgSampleApplication
                         }
                     });
                     p_bitmapSource = ToBitmapSource(view);
-                    MessageBox.Show("Image Open Done");
                 }
                 else
                 {
-                    MessageBox.Show("INTPTR Zero");
+                    System.Windows.Forms.MessageBox.Show("INTPTR Zero");
                 }
             }
             catch(Exception e)
             {
-                MessageBox.Show(e.Message);
+                System.Windows.Forms.MessageBox.Show(e.Message);
             }
         }
 
-        private void ImageClear()
+        private unsafe void ImageClear()
         {
-
-            MessageBox.Show("Image Clear Done");
+            byte[] abuf = new byte[MapSizeX];
+            for (int i = 0; i <= MapSizeY; i++)
+            {
+                IntPtr ptr = new IntPtr(destPtr.ToInt64() + ((long)i) * MapSizeX * nByte);
+                Marshal.Copy(abuf, 0, ptr, abuf.Length);
+            }
+            System.Windows.Forms.MessageBox.Show("Image Clear Done");
         }
 
         private bool ReadBitmapFileHeader(BinaryReader br, ref uint bfOffbits)
@@ -259,7 +345,19 @@ namespace ImgSampleApplication
 
             return true;
         }
+
+        public void MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            var pt = e.GetPosition(sender as IInputElement);
+            p_mouseX = (int)pt.X;
+            p_mouseY = (int)pt.Y;
+        }
        
+        public void MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            ImageOpen();
+        }
+
         public event PropertyChangedEventHandler PropertyChanged;
         public void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {

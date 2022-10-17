@@ -4,7 +4,8 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:ImgSampleApplication"
-        xmlns:i="clr-namespace:System.Windows.Interactivity;assembly=System.Windows.Interactivity" 
+        xmlns:obs="clr-namespace:nsSizeObserver"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800"
         >
@@ -15,15 +16,46 @@
         <i:EventTrigger EventName="Unloaded">
             <i:InvokeCommandAction Command="{Binding UnloadedCommand}" />
         </i:EventTrigger>
+        <i:EventTrigger EventName="MouseMove">
+            <i:CallMethodAction TargetObject="{Binding}" MethodName="MouseMove" />
+        </i:EventTrigger>
+        <i:EventTrigger EventName="MouseWheel">
+            <i:CallMethodAction TargetObject="{Binding}" MethodName="MouseWheel" />
+        </i:EventTrigger>
     </i:Interaction.Triggers>
 
-
-    <Grid Background="Black">
-        <Image Source="{Binding p_bitmapSource}"/>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
-            <Button Content="LOAD" Width="50" Height="50" Command="{Binding ImageLoadCommand}"/>
-            <Button Content="Open" Width="50" Height="50" Command="{Binding ImageOpenCommand}"/>
-            <Button Content="Clear" Width="50" Height="50" Command="{Binding ImageClearCommand}"/>
-        </StackPanel>
-    </Grid>
+    <DockPanel>
+        <Grid DockPanel.Dock="Bottom" Background="Gray">
+            <Grid>
+                <Grid HorizontalAlignment="Left" Margin="5,0">
+                    <StackPanel Orientation="Horizontal" TextElement.Foreground="White">
+                        <TextBlock Text="{Binding p_mouseX}"/>
+                        <TextBlock Text=","/>
+                        <TextBlock Text="{Binding p_mouseY}"/>
+                        <TextBlock Text=" ("/>
+                        <TextBlock Text="{Binding p_mouseMemX}"/>
+                        <TextBlock Text=","/>
+                        <TextBlock Text="{Binding p_mouseMemY}"/>
+                        <TextBlock Text=")"/>
+                    </StackPanel>
+                </Grid>
+                <Grid HorizontalAlignment="Right" Margin="5,0" Height="15">
+                    <StackPanel Orientation="Horizontal" TextElement.Foreground="White">
+                        <TextBlock Text="{Binding p_pixelData}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+        <Grid Background="Black">
+            <Canvas Background="Transparent" obs:SizeObserver.Observe="true" Focusable="True"
+                obs:SizeObserver.ObservedWidth="{Binding p_CanvasWidth, Mode=TwoWay}"
+                obs:SizeObserver.ObservedHeight="{Binding p_CanvasHeight, Mode=OneWayToSource}" Grid.ColumnSpan="2">
+                <Image Source="{Binding Path = p_bitmapSource}" Stretch="Fill"/>
+            </Canvas>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Button Content="LOAD" Width="50" Height="50" Command="{Binding ImageLoadCommand}"/>
+                <Button Content="Clear" Width="50" Height="50" Command="{Binding ImageClearCommand}"/>
+            </StackPanel>
+        </Grid>
+    </DockPanel>
 </Window>
