@@ -77,8 +77,8 @@ namespace ImgSampleApplication
                     long idx = p_mouseMemX + ((long)p_mouseMemY * MapSizeX);
                     byte b1 = arrByte[idx];
                     p_pixelData = BitConverter.ToUInt16(new byte[2] { b1, 0 }, 0);
-                    p_mouseMemX = p_mouseX * (MapSizeX / p_CanvasWidth);
-                    p_mouseMemY = p_mouseY * (MapSizeY / p_CanvasHeight);
+                    p_mouseMemX = p_mouseX * MapSizeX / p_CanvasWidth;
+                    p_mouseMemY = p_mouseY * MapSizeY / p_CanvasHeight;
                 }
                 m_mouseY = value;
                 OnPropertyChanged();
