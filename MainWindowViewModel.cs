@@ -17,6 +17,12 @@ using System.Windows.Media.Imaging;
 
 namespace ImgSampleApplication
 {
+    enum ColorMode
+    {
+        Mono,
+        Color
+    }
+
     class MainWindowViewModel : INotifyPropertyChanged
     {
         MemoryMappedFile m_MMF;
@@ -27,6 +33,7 @@ namespace ImgSampleApplication
         int MapSizeX;
         int MapSizeY;
         int CanvasWidth = 800;
+        ColorMode m_color;
         public int p_CanvasWidth
         {
             get => CanvasWidth;
