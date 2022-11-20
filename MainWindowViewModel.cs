@@ -32,34 +32,34 @@ namespace ImgSampleApplication
         double GB = 1024 * 1024 * 1024;
         int MapSizeX;
         int MapSizeY;
-        int CanvasWidth = 800;
+        int CanvasBit_Width = 800;
         ColorMode m_color;
         public int p_CanvasWidth
         {
-            get => CanvasWidth;
+            get => CanvasBit_Width;
             set
             {
-                CanvasWidth = value;
+                CanvasBit_Width = value;
                 OnPropertyChanged();
             }
         }
-        int CanvasHeight = 450;
+        int CanvasBit_Height = 450;
         public int p_CanvasHeight
         {
-            get => CanvasHeight;
+            get => CanvasBit_Height;
             set
             {
-                CanvasHeight = value;
+                CanvasBit_Height = value;
                 OnPropertyChanged();
                 ImageOpen();
             }
         }
         uint bfOffbits = 0;
-        int width = 0;
-        int height = 0;
+        int Bit_Width = 0;
+        int Bit_Height = 0;
         int nByte = 0;
         BitmapSource m_bitmapSource;
-        IntPtr destPtr;
+        IntPtr RPtr, GPtr, BPtr;
 
         int m_mouseX;
         public int p_mouseX
@@ -80,12 +80,14 @@ namespace ImgSampleApplication
             {
                 unsafe
                 {
-                    byte* arrByte = (byte*)destPtr.ToPointer();
+                    byte* arrByte = (byte*)RPtr.ToPointer();
                     long idx = p_mouseMemX + ((long)p_mouseMemY * MapSizeX);
                     byte b1 = arrByte[idx];
                     p_pixelData = BitConverter.ToUInt16(new byte[2] { b1, 0 }, 0);
-                    p_mouseMemX = p_mouseX * MapSizeX / p_CanvasWidth;
-                    p_mouseMemY = p_mouseY * MapSizeY / p_CanvasHeight;
+                    int SamplingRate_y = MapSizeY < p_CanvasHeight ? 1 : MapSizeY / p_CanvasHeight;
+                    int SamplingRate_x = MapSizeX < p_CanvasWidth ? 1 : MapSizeX / p_CanvasWidth;
+                    p_mouseMemX = p_mouseX * SamplingRate_x;
+                    p_mouseMemY = p_mouseY * SamplingRate_y;
                 }
                 m_mouseY = value;
                 OnPropertyChanged();
@@ -145,7 +147,7 @@ namespace ImgSampleApplication
             { 
                 byte* p = null;
                 m_MMF.CreateViewAccessor().SafeMemoryMappedViewHandle.AcquirePointer(ref p);
-                destPtr = new IntPtr(p);
+                RPtr = new IntPtr(p);
             }
             ImageOpen();
         }
@@ -197,7 +199,6 @@ namespace ImgSampleApplication
         /// <returns> 없음 </returns>
         private unsafe void ImageLoad()
         {
-
             FileStream fs;
             BinaryReader br;
             byte[] abuf;
@@ -213,31 +214,57 @@ namespace ImgSampleApplication
                 {
   
                     if (!ReadBitmapFileHeader(br,ref bfOffbits)) return;
-                    if (!ReadBitmapInfoHeader(br, ref width, ref height, ref nByte)) return;
-                    MapSizeX = width;
-                    MapSizeY = height;
-                    if (nByte > 1) return;
+                    if (!ReadBitmapInfoHeader(br, ref Bit_Width, ref Bit_Height, ref nByte)) return;
+                    GPtr = (IntPtr)((long)RPtr + (long)(Bit_Width * Bit_Height));
+                    BPtr = (IntPtr)((long)GPtr + (long)(Bit_Width * Bit_Height));
+                    MapSizeX = Bit_Width;
+                    MapSizeY = Bit_Height;
+                    if (nByte > 1) m_color = ColorMode.Color;
+                    else m_color = ColorMode.Mono;
 
-                    fileRowSize = (width * nByte + 3) & ~3; // 파일 내 하나의 열당 너비 사이즈(4의 배수)
-                    Rectangle rect = new Rectangle(0, 0, width, height);
-                    abuf = new byte[rect.Width * nByte];
-
-                    // 픽셀 데이터 존재하는 부분으로 Seek
-                    fs.Seek(bfOffbits, SeekOrigin.Begin);
-                    
-                    //for(int i = rect.Bottom -1; i>=rect.Top; i--)
-                    for (int i = rect.Bottom - 1; i >= rect.Top; i--)
+                    if (m_color == ColorMode.Mono)
                     {
-                        Array.Clear(abuf, 0, rect.Width * nByte);
-                        fs.Seek(rect.Left * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
-                        fs.Read(abuf, 0, rect.Width * nByte);
+                        fileRowSize = (Bit_Width * nByte + 3) & ~3; // 파일 내 하나의 열당 너비 사이즈(4의 배수)
+                        Rectangle rect = new Rectangle(0, 0, Bit_Width, Bit_Height);
+                        abuf = new byte[rect.Width * nByte];
 
-                        IntPtr ptr = new IntPtr(destPtr.ToInt64() + ((long)i) * MapSizeX * nByte);
-                        Marshal.Copy(abuf, 0, ptr, rect.Width * nByte);
-                        fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
+                        // 픽셀 데이터 존재하는 부분으로 Seek
+                        fs.Seek(bfOffbits, SeekOrigin.Begin);
+
+                        //for(int i = rect.Bottom -1; i>=rect.Top; i--)
+                        for (int i = rect.Bottom - 1; i >= rect.Top; i--)
+                        {
+                            Array.Clear(abuf, 0, rect.Width * nByte);
+                            fs.Seek(rect.Left * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
+                            fs.Read(abuf, 0, rect.Width * nByte);
+
+                            IntPtr ptr = new IntPtr(RPtr.ToInt64() + ((long)i) * MapSizeX * nByte);
+                            Marshal.Copy(abuf, 0, ptr, abuf.Length);
+                            fs.Seek(fileRowSize - rect.Right * nByte, SeekOrigin.Current); // Offset이 없으면 주석처리가능
+                        }
+                        System.Windows.Forms.MessageBox.Show("Image Load Done");
                     }
-                    System.Windows.Forms.MessageBox.Show("Image Load Done");
-
+                    else if(m_color == ColorMode.Color)
+                    {
+                        fileRowSize = Bit_Width * nByte;
+                        abuf = new byte[Bit_Width * nByte];
+                        Rectangle rect = new Rectangle(0, 0, Bit_Width, Bit_Height);
+                        fs.Seek(bfOffbits, SeekOrigin.Begin);
+                        for (int yy = rect.Bottom - 1 ; yy >= rect.Top; yy--)
+                        {
+                            Array.Clear(abuf, 0, Bit_Width * nByte);
+                            //fs.Seek(Bit_Width * nByte, SeekOrigin.Current);
+                            fs.Read(abuf, 0, Bit_Width * nByte);
+                            Parallel.For(0, Bit_Width, new ParallelOptions { MaxDegreeOfParallelism = 12 },(xx) => 
+                            {
+                                int idx = yy * MapSizeX + xx;
+                                ((byte*)RPtr)[idx] = abuf[xx * nByte];
+                                ((byte*)GPtr)[idx] = abuf[xx * nByte + 1];
+                                ((byte*)BPtr)[idx] = abuf[xx * nByte + 2];
+                            });
+                        }
+                        System.Windows.Forms.MessageBox.Show("Image Load Done");
+                    }
 
                 }
                 catch(Exception e)
@@ -257,28 +284,61 @@ namespace ImgSampleApplication
         {
             try
             {
-                if (destPtr != IntPtr.Zero)
+                switch (m_color)
                 {
-                    Image<Gray, byte> view = new Image<Gray, byte>(p_CanvasWidth, p_CanvasHeight);
-                    int rectX, rectY, rectWidth, rectHeight, sizeX;
-                    byte[,,] viewptr = view.Data;
-                    Parallel.For(0, p_CanvasHeight, (yy) =>
-                    {
-                        long pix_y = yy * MapSizeY / p_CanvasHeight;
-                        for (int xx = 0; xx < p_CanvasWidth; xx++)
+                    case ColorMode.Mono:
                         {
-                            long pix_x = xx * MapSizeX / p_CanvasWidth;
-                            byte* arrByte = (byte*)destPtr;
-                            long idx = pix_x + (pix_y * MapSizeX);
-                            byte pixel = arrByte[idx];
-                            viewptr[yy, xx, 0] = pixel;
+                            if (RPtr != IntPtr.Zero)
+                            {
+                                Image<Gray, byte> view = new Image<Gray, byte>(p_CanvasWidth, p_CanvasHeight);
+                                int SamplingRate_y = MapSizeY < p_CanvasHeight ? 1 : MapSizeY / p_CanvasHeight;
+                                int SamplingRate_x = MapSizeX < p_CanvasWidth ? 1 : MapSizeX / p_CanvasWidth;
+                                byte[,,] viewptr = view.Data;
+                                Parallel.For(0, p_CanvasHeight, (yy) =>
+                                {
+                                    long pix_y = yy * SamplingRate_y;
+                                    for (int xx = 0; xx < p_CanvasWidth; xx++)
+                                    {
+                                        long pix_x = xx * SamplingRate_x;
+                                        byte* arrByte = (byte*)RPtr;
+                                        long idx = pix_x + (pix_y * MapSizeX);
+                                        byte pixel = arrByte[idx];
+                                        viewptr[yy, xx, 0] = pixel;
+                                    }
+                                });
+                                p_bitmapSource = ToBitmapSource(view);
+                            }
+                            else
+                            {
+                                System.Windows.Forms.MessageBox.Show("INTPTR Zero");
+                            }
                         }
-                    });
-                    p_bitmapSource = ToBitmapSource(view);
-                }
-                else
-                {
-                    System.Windows.Forms.MessageBox.Show("INTPTR Zero");
+                        break;
+                    case ColorMode.Color:
+                        if(RPtr != IntPtr.Zero)
+                        {
+                            Image<Rgb, byte> view = new Image<Rgb, byte>(p_CanvasWidth,p_CanvasHeight);
+                            int SamplingRate_y = MapSizeY < p_CanvasHeight ? 1 : MapSizeY / p_CanvasHeight;
+                            int SamplingRate_x = MapSizeX < p_CanvasWidth ? 1 : MapSizeX / p_CanvasWidth;
+                            byte[,,] viewPtr = view.Data;
+                            byte* RByte = (byte*)RPtr.ToPointer();
+                            byte* GByte = (byte*)GPtr.ToPointer();
+                            byte* BByte = (byte*)BPtr.ToPointer();
+                            Parallel.For(0, MapSizeY < p_CanvasHeight ? MapSizeY : p_CanvasHeight , (yy) => 
+                            {
+                                long pix_y =  yy * SamplingRate_y;
+                                for(int xx = 0; xx < (MapSizeX < p_CanvasWidth ? MapSizeX:p_CanvasWidth); xx++)
+                                {
+                                    long pix_x = xx * SamplingRate_x;
+                                    long idx = pix_x + (pix_y * MapSizeX);
+                                    viewPtr[yy, xx, 0] = RByte[idx];
+                                    viewPtr[yy, xx, 1] = GByte[idx];
+                                    viewPtr[yy, xx, 2] = BByte[idx];
+                                }
+                            });
+                            p_bitmapSource = ToBitmapSource(view);
+                        }
+                        break;
                 }
             }
             catch(Exception e)
@@ -289,10 +349,10 @@ namespace ImgSampleApplication
 
         private unsafe void ImageClear()
         {
-            byte[] abuf = new byte[MapSizeX];
+            byte[] abuf = new byte[MapSizeX * nByte];
             for (int i = 0; i <= MapSizeY; i++)
             {
-                IntPtr ptr = new IntPtr(destPtr.ToInt64() + ((long)i) * MapSizeX * nByte);
+                IntPtr ptr = new IntPtr(RPtr.ToInt64() + ((long)i) * MapSizeX * nByte);
                 Marshal.Copy(abuf, 0, ptr, abuf.Length);
             }
             System.Windows.Forms.MessageBox.Show("Image Clear Done");
@@ -332,15 +392,30 @@ namespace ImgSampleApplication
             }
         }
 
-        private bool ReadBitmapInfoHeader(BinaryReader br, ref int width, ref int height, ref int nByte)
+        private BitmapSource ToBitmapSource(Image<Rgb, byte> img)
+        {
+            using (Bitmap source = img.ToBitmap())
+            {
+                var bitmapData = source.LockBits(
+                    new Rectangle(0, 0, source.Width, source.Height),
+                    System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                    source.PixelFormat);
+                BitmapSource result = BitmapSource.Create(source.Width, source.Height, 96, 96,
+                    PixelFormats.Rgb24, null, bitmapData.Scan0, bitmapData.Stride * bitmapData.Height, bitmapData.Stride);
+                source.UnlockBits(bitmapData);
+                return result;
+            }
+        }
+
+        private bool ReadBitmapInfoHeader(BinaryReader br, ref int Bit_Width, ref int Bit_Height, ref int nByte)
         {
             if (br == null) return false;
 
             uint biSize;
 
             biSize = br.ReadUInt32();     // biSize
-            width = br.ReadInt32();       // biWidth
-            height = br.ReadInt32();      // biHeight
+            Bit_Width = br.ReadInt32();       // biBit_Width
+            Bit_Height = br.ReadInt32();      // biBit_Height
             br.ReadUInt16();              // biPlanes
             nByte = br.ReadUInt16() / 8;  // biBitcount
             br.ReadUInt32();              // biCompression
